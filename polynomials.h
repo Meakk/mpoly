@@ -6,81 +6,142 @@
 
 namespace poly
 {
-template<std::size_t Degree>
-struct is_degree_2 : std::false_type {};
 
-template<>
-struct is_degree_2<2> : std::true_type {};
-
-struct empty{};
-
-template<typename Real, std::size_t Degree>
-class polynomials;
-
-template<typename Real, std::size_t Degree>
-class derivative
+namespace details
 {
-protected:
-  polynomials<Real, Degree> mDerivative;
-};
-
 template<typename Real, std::size_t Degree>
-class polynomials : public std::conditional<is_degree_2<Degree>::value, empty, derivative<Real, Degree-1>>::type
+class polynomial_base
 {
 public:
-  polynomials() = default;
+  polynomial_base() = default;
 
-  template<std::size_t V = Degree>
-  polynomials(std::array<Real, Degree+1> coefficients,
-   typename std::enable_if<!is_degree_2<V>::value>::type* = 0)
+  polynomial_base(std::array<Real, Degree+1> coefficients)
   : mCoefficients(std::move(coefficients))
+  {
+  }
+
+  Real evaluate(Real x)
+  {
+    Real val = this->mCoefficients[0];
+    for (auto it = this->mCoefficients.cbegin() + 1; it != this->mCoefficients.cend(); it++)
+    {
+      val = val * x + (*it);
+    }
+    return val;
+  }
+
+protected:
+  std::array<Real, Degree+1> mCoefficients;
+};
+}
+
+template<typename Real, std::size_t Degree>
+class polynomial : public details::polynomial_base<Real, Degree>
+{
+public:
+  polynomial() = default;
+
+  polynomial(std::array<Real, Degree+1> coefficients)
+  : details::polynomial_base<Real, Degree>(std::move(coefficients))
   {
     std::array<Real, Degree> d;
     for (std::size_t deg = 0; deg < Degree; deg++)
     {
       d[deg] = coefficients[deg] * static_cast<Real>(Degree - deg);
     }
-    this->mDerivative = polynomials<Real, Degree-1>(d);
+    this->mDerivative = polynomial<Real, Degree-1>(d);
   }
 
-  template<std::size_t V = Degree>
-  polynomials(std::array<Real, Degree+1> coefficients,
-   typename std::enable_if<is_degree_2<V>::value>::type* = 0)
-  : mCoefficients(std::move(coefficients))
+  std::vector<Real> find_roots(Real lower_bound, Real upper_bound)
+  {
+    auto crits = this->mDerivative.find_roots(lower_bound, upper_bound);
+
+    if (crits.size() == 0)
+    {
+      if (same_sign(lower_bound, upper_bound))
+        return {};
+
+      return { find_root_monotonic(lower_bound, upper_bound) };
+    }
+
+    std::vector<Real> roots;
+
+    if (!same_sign(lower_bound, crits.front()))
+      roots.push_back(find_root_monotonic(lower_bound, crits.front()));
+
+    for (size_t i = 0; i < crits.size() - 1; i++)
+    {
+      if (!same_sign(crits[i], crits[i + 1]))
+        roots.push_back(find_root_monotonic(crits[i], crits[i + 1]));
+    }
+
+    if (!same_sign(crits.back(), upper_bound))
+      roots.push_back(find_root_monotonic(crits.back(), upper_bound));
+
+    return roots;
+  }
+
+private:
+  Real find_root_monotonic(Real lower_bound, Real upper_bound)
+  {
+    Real guess = lower_bound - this->evaluate(lower_bound) / this->mDerivative.evaluate(lower_bound);
+
+    if (guess >= upper_bound || guess <= lower_bound)
+    {
+      guess = lower_bound + 0.5 * (upper_bound - lower_bound);
+    }
+
+    Real val = this->evaluate(guess);
+
+    if (std::abs(val) < 1e-5)
+    {
+      return guess;
+    }
+
+    if (!same_sign(lower_bound, guess))
+      return find_root_monotonic(lower_bound, guess);
+
+    return find_root_monotonic(guess, upper_bound);
+  }
+
+  inline bool same_sign(Real x0, Real x1) {
+    Real y0 = this->evaluate(x0);
+    Real y1 = this->evaluate(x1);
+    return (y0 > Real(0) && y1 > Real(0)) || (y0 < Real(0) && y1 < Real(0));
+  }
+
+  polynomial<Real, Degree-1> mDerivative;
+};
+
+template<typename Real>
+class polynomial<Real, 2> : public details::polynomial_base<Real, 2>
+{
+public:
+  polynomial() = default;
+
+  polynomial(std::array<Real, 3> coefficients)
+  : details::polynomial_base<Real, 2>(std::move(coefficients))
   {
     // derivative is not needed for degree 2
   }
 
-  template<std::size_t V = Degree>
-  typename std::enable_if<!is_degree_2<V>::value, std::vector<Real>>::type
-  find_roots(Real lower_bound, Real upper_bound)
+  std::vector<Real> find_roots(Real lower_bound, Real upper_bound)
   {
-    auto optims = this->mDerivative.find_roots(lower_bound, upper_bound);
-
-    // std::vector<Real> roots;
-
-    return {};
-  }
-
-  template<std::size_t V = Degree>
-  typename std::enable_if<is_degree_2<V>::value, std::vector<Real>>::type
-  find_roots(Real lower_bound, Real upper_bound)
-  {
-    Real delta = mCoefficients[1] * mCoefficients[1] - 4. * mCoefficients[0] * mCoefficients[2];
+    Real delta = this->mCoefficients[1] * this->mCoefficients[1] - 4. * this->mCoefficients[0] * this->mCoefficients[2];
 
     if (delta < 0)
       return {};
 
     if (delta == 0)
     {
-      Real x = -mCoefficients[1] / (2. * mCoefficients[0]);
+      Real x = -this->mCoefficients[1] / (2. * this->mCoefficients[0]);
       if (x < lower_bound || x > upper_bound)
         return {};
       return { x };
     }
     Real s = std::sqrt(delta);
-    Real x0 = (-mCoefficients[1] - s) / (2. * mCoefficients[0]);
-    Real x1 = (-mCoefficients[1] + s) / (2. * mCoefficients[0]);
+    Real x0 = (-this->mCoefficients[1] - s) / (2. * this->mCoefficients[0]);
+    Real x1 = (-this->mCoefficients[1] + s) / (2. * this->mCoefficients[0]);
 
     std::vector<Real> values;
     values.reserve(2);
@@ -92,27 +153,5 @@ public:
 
     return values;
   }
-
-  Real evaluate(Real x)
-  {
-    Real val = mCoefficients[0];
-    for (auto it = mCoefficients.cbegin() + 1; it != mCoefficients.cend(); it++)
-    {
-      val = val * x + (*it);
-    }
-  }
-
-private:
-  std::vector<Real> find_root_monotonic(Real lower_bound, Real upper_bound)
-  {
-    Real guess = lower_bound - evaluate(lower_bound) / this->mDerivative.evaluate(lower_bound);
-
-    // if (guess > upper_bound)
-    // {
-
-    // }
-  }
-
-  std::array<Real, Degree+1> mCoefficients;
 };
 }
