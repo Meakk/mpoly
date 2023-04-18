@@ -44,6 +44,8 @@ public:
   polynomial(std::array<Real, Degree+1> coefficients)
   : details::polynomial_base<Real, Degree>(std::move(coefficients))
   {
+    static_assert(Degree > 2, "Degree must be 2 or more");
+
     std::array<Real, Degree> d;
     for (std::size_t deg = 0; deg < Degree; deg++)
     {
