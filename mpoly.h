@@ -1,10 +1,8 @@
 #include <array>
 #include <cmath>
-#include <functional>
-#include <type_traits>
 #include <vector>
 
-namespace poly
+namespace mpoly
 {
 
 namespace details
@@ -86,10 +84,12 @@ public:
 private:
   Real find_root_monotonic(Real lower_bound, Real upper_bound)
   {
+    // Try Newton guess
     Real guess = lower_bound - this->evaluate(lower_bound) / this->mDerivative.evaluate(lower_bound);
 
     if (guess >= upper_bound || guess <= lower_bound)
     {
+      // Newton failed, get the middle point
       guess = lower_bound + 0.5 * (upper_bound - lower_bound);
     }
 
@@ -127,7 +127,7 @@ public:
     // derivative is not needed for degree 2
   }
 
-  std::vector<Real> find_roots(Real lower_bound, Real upper_bound)
+  std::vector<Real> find_roots(Real lower_bound, Real upper_bound) const
   {
     Real delta = this->mCoefficients[1] * this->mCoefficients[1] - 4. * this->mCoefficients[0] * this->mCoefficients[2];
 
@@ -141,9 +141,11 @@ public:
         return {};
       return { x };
     }
-    Real s = std::sqrt(delta);
-    Real x0 = (-this->mCoefficients[1] - s) / (2. * this->mCoefficients[0]);
-    Real x1 = (-this->mCoefficients[1] + s) / (2. * this->mCoefficients[0]);
+
+    // stable version of quadratic roots
+    Real u = -this->mCoefficients[1] - std::copysign(std::sqrt(delta), this->mCoefficients[1]);
+    Real x0 = (2. * this->mCoefficients[2]) / u;
+    Real x1 = u / (2. * this->mCoefficients[0]);
 
     std::vector<Real> values;
     values.reserve(2);
